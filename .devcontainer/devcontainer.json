@@ -1,0 +1,26 @@
+{
+	"name": "${localWorkspaceFolderBasename}",
+	"build": {
+		"context": "..",
+		
+		// Use the appropriate Dockerfile for your environment
+		"dockerfile": "cpu.Dockerfile" // <-- For CPU
+		// "dockerfile": "gpu.Dockerfile" // <-- For GPU
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"cweijan.vscode-typora",
+				"ms-python.python",
+				"ms-toolsai.tensorboard"
+			]
+		}
+	},
+	"updateContentCommand": "pip3 install -r ${containerWorkspaceFolder}/requirements.txt",
+	
+	// Uncomment runArgs when using GPU
+	// "runArgs": [
+	// 	"--privileged",
+	// 	"--gpus", "all"
+	// ]
+}
