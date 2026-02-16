@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 
 
-def lightning_config(cls):
+def lightning_config(cls=None, *, init_args: Dict[str, Any] = None):
     """Decorator to auto-generate LightningCLI-compatible YAML from class __init__ signature.
     
     Inspects the class's __init__ method and extracts:
@@ -19,6 +19,11 @@ def lightning_config(cls):
     - Optional parameters show their default value
     - Type hints are included as comments
     
+    Args:
+        cls: The class to decorate (when used without arguments)
+        init_args: Dict of parameter names to their full config structures
+                  (e.g., nested class_path + init_args for component classes)
+    
     Adds to the class:
     - _lightning_config: dict with parameter names and values
     - to_yaml(): method to generate YAML string
@@ -26,124 +31,153 @@ def lightning_config(cls):
     
     Example:
         @lightning_config
-        class MyModel(LightningModule):
+        class SimpleModel(LightningModule):
             def __init__(self, net: torch.nn.Module, lr: float = 0.001):
                 ...
         
-        # Generate YAML
-        yaml_str = MyModel.to_yaml()
-        # Output:
-        # net: ???  # type: Module
-        # lr: 0.001  # type: float
-    """
-    
-    sig = inspect.signature(cls.__init__)
-    try:
-        type_hints = get_type_hints(cls.__init__)
-    except Exception:
-        # Fallback if type hints can't be resolved
-        type_hints = {}
-    
-    config_dict = {}
-    
-    for param_name, param in sig.parameters.items():
-        if param_name == 'self':
-            continue
-        
-        # Get type hint if available
-        param_type = type_hints.get(param_name, param.annotation)
-        type_str = ""
-        
-        if param_type != inspect.Parameter.empty:
-            # Format type name nicely
-            if hasattr(param_type, '__name__'):
-                type_str = f"  # type: {param_type.__name__}"
-            else:
-                type_str = f"  # type: {str(param_type)}"
-        
-        # Get default value or mark as required
-        if param.default == inspect.Parameter.empty:
-            # Required parameter
-            value = "???"
-        else:
-            # Optional parameter with default
-            value = param.default
-        
-        # Store in config dict
-        if type_str:
-            config_dict[param_name] = f"{value}{type_str}"
-        else:
-            config_dict[param_name] = value
-    
-    # Attach metadata to the class
-    cls._lightning_config = config_dict
-    cls._config_class = cls.__name__
-    
-    def to_yaml(as_dict: bool = False, with_class_path: bool = True) -> Any:
-        """Generate YAML config template.
-        
-        Args:
-            as_dict: If True, return dict instead of YAML string.
-            with_class_path: If True, wrap in class_path + init_args (for LightningCLI).
-        
-        Returns:
-            YAML string or dict with config template.
-        """
-        # Clean dict without type comments
-        clean_dict = {}
-        for k, v in config_dict.items():
-            if isinstance(v, str) and '  # type:' in v:
-                clean_dict[k] = v.split('  # type:')[0]
-            else:
-                clean_dict[k] = v
-        
-        if with_class_path:
-            # Wrap in class_path + init_args for LightningCLI
-            module = cls.__module__
-            class_name = cls.__name__
-            structured = {
-                "class_path": f"{module}.{class_name}",
-                "init_args": clean_dict
+        @lightning_config(init_args={
+            "net": {
+                "class_path": "src.models.simpledense.SimpleDenseNet",
+                "init_args": {"input_size": 784, "output_size": 10}
             }
-        else:
-            structured = clean_dict
+        })
+        class ConfiguredModel(LightningModule):
+            def __init__(self, net: torch.nn.Module, lr: float = 0.001):
+                ...
+    """
+    init_args = init_args or {}
+    
+    def decorator(cls_to_decorate):
+        sig = inspect.signature(cls_to_decorate.__init__)
+        try:
+            type_hints = get_type_hints(cls_to_decorate.__init__)
+        except Exception:
+            # Fallback if type hints can't be resolved
+            type_hints = {}
         
-        if as_dict:
-            return structured
+        config_dict = {}
         
-        # Build YAML string with comments
-        lines = []
-        if with_class_path:
-            lines.append(f"class_path: {structured['class_path']}")
-            lines.append("init_args:")
-            for k, v in structured['init_args'].items():
-                # Get original with type comment
-                orig_v = config_dict.get(k, v)
-                if isinstance(orig_v, str) and '  # type:' in orig_v:
-                    lines.append(f"  {k}: {orig_v}")
+        for param_name, param in sig.parameters.items():
+            if param_name == 'self':
+                continue
+            
+            # Check if we have init_args for this parameter
+            if param_name in init_args:
+                value = init_args[param_name]
+            elif param.default == inspect.Parameter.empty:
+                # Required parameter with no init_args override
+                value = "???"
+            else:
+                # Optional parameter with default
+                value = param.default
+            
+            config_dict[param_name] = value
+        
+        # Define methods for the class
+        def to_yaml(as_dict: bool = False, with_class_path: bool = True) -> Any:
+            """Generate YAML config template."""
+            # Clean dict - handle nested dicts
+            clean_dict = {}
+            for k, v in config_dict.items():
+                if isinstance(v, str) and '  # type:' in v:
+                    clean_dict[k] = v.split('  # type:')[0]
                 else:
-                    lines.append(f"  {k}: {v}")
-        else:
-            for k, v in clean_dict.items():
-                lines.append(f"{k}: {v}")
+                    clean_dict[k] = v
+            
+            # Convert tuples to lists for OmegaConf compatibility
+            def tuples_to_lists(value):
+                if isinstance(value, tuple):
+                    return [tuples_to_lists(v) for v in value]
+                elif isinstance(value, dict):
+                    return {k: tuples_to_lists(v) for k, v in value.items()}
+                elif isinstance(value, list):
+                    return [tuples_to_lists(v) for v in value]
+                return value
+            
+            clean_dict = tuples_to_lists(clean_dict)
+            
+            if with_class_path:
+                # Wrap in class_path + init_args for LightningCLI
+                module = cls_to_decorate.__module__
+                class_name = cls_to_decorate.__name__
+                structured = {
+                    "class_path": f"{module}.{class_name}",
+                    "init_args": clean_dict
+                }
+            else:
+                structured = clean_dict
+            
+            if as_dict:
+                return structured
+            
+            # Return YAML string
+            import yaml
+            return yaml.dump(structured, default_flow_style=False, sort_keys=False)
         
-        return "\n".join(lines)
-    
-    def to_yaml_file(path: str | Path) -> Path:
-        """Write YAML config to file.
+        def to_yaml_file(path: str | Path) -> Path:
+            """Write YAML config to file (without outer class_path wrapper for component configs)."""
+            path = Path(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(to_yaml(with_class_path=False))
+            return path
         
-        Args:
-            path: File path to write to.
+        # Attach metadata and methods to the class
+        cls_to_decorate._lightning_config = config_dict
+        cls_to_decorate._config_class = cls_to_decorate.__name__
+        cls_to_decorate.to_yaml = staticmethod(to_yaml)
+        cls_to_decorate.to_yaml_file = staticmethod(to_yaml_file)
         
-        Returns:
-            Path object of written file.
-        """
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(to_yaml())
-        return path
+        return cls_to_decorate
     
-    cls.to_yaml = staticmethod(to_yaml)
-    cls.to_yaml_file = staticmethod(to_yaml_file)
+    # Support both @lightning_config and @lightning_config(init_args={...})
+    if cls is None:
+        # Called with arguments: @lightning_config(init_args={...})
+        return decorator
+    else:
+        # Called without arguments: @lightning_config
+        return decorator(cls)
+
+
+def training_config(**composition):
+    """Decorator for training orchestration that generates train.yaml and wraps main().
     
-    return cls
+    Args:
+        **composition: Keys are config file paths (seed_everything, trainer, model, data)
+        
+    Example:
+        @training_config(
+            seed_everything=42,
+            trainer="trainer/default.yaml",
+            model="model/mnist.yaml",
+            data="datamodule/mnist.yaml"
+        )
+        def main(cli):
+            cli.trainer.fit(cli.model, datamodule=cli.datamodule)
+    """
+    def decorator(func):
+        # Store composition for build.py to find and generate train.yaml
+        func._training_config = composition
+        
+        # Wrap the function to handle LightningCLI instantiation
+        def wrapper():
+            from pytorch_lightning.cli import LightningCLI
+            
+            # Import model and datamodule classes
+            from .datamodules.mnist_datamodule import MNISTDataModule
+            from .modules.mnist_litmodule import MNISTLitModule
+            
+            # LightningCLI with run=True automatically parses args and runs fit/test/predict
+            # The user's decorated function is called with cli if run=False, but here we let
+            # LightningCLI handle the execution directly
+            cli = LightningCLI(
+                model_class=MNISTLitModule,
+                datamodule_class=MNISTDataModule,
+                seed_everything_default=composition.get('seed_everything', 42),
+                run=True,
+                parser_kwargs={"parser_mode": "omegaconf", "error_handler": None}
+            )
+        
+        wrapper._training_config = composition
+        return wrapper
+    
+    return decorator

@@ -8,10 +8,13 @@
             "name": "Train CLI",
             "type": "python",
             "request": "launch",
-            "program": "src/train.py",
+            "module": "src.train",
             "console": "integratedTerminal",
             "justMyCode": true,
+            "preLaunchTask": "Build & Hydrate",
+            "env": {"PYTHONPATH": "${workspaceFolder}"},
             "args": [
+                "fit",
                 "--config", "configs/train.yaml"
             ]
         },
@@ -19,10 +22,13 @@
             "name": "Train dev run",
             "type": "python",
             "request": "launch",
-            "program": "src/train.py",
+            "module": "src.train",
             "console": "integratedTerminal",
             "justMyCode": true,
+            "preLaunchTask": "Build & Hydrate",
+            "env": {"PYTHONPATH": "${workspaceFolder}"},
             "args": [
+                "fit",
                 "--config", "configs/train.yaml",
                 "--trainer.fast_dev_run=true"
             ]

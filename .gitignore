@@ -2,6 +2,10 @@ checkpoints
 logs
 __pycache__
 data
+
 configs/*
+!configs/trainer/default.yaml
+
 src/*
+!src/__init__.py
 !src/lightning_config.py
