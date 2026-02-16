@@ -1,0 +1,2 @@
+[tool.nbdev]
+lib_path = "src"

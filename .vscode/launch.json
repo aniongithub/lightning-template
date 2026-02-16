@@ -8,7 +8,7 @@
             "name": "Train CLI",
             "type": "python",
             "request": "launch",
-            "program": "train.py",
+            "program": "src/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
@@ -19,7 +19,7 @@
             "name": "Train dev run",
             "type": "python",
             "request": "launch",
-            "program": "train.py",
+            "program": "src/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [

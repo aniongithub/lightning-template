@@ -12,7 +12,8 @@
 			"extensions": [
 				"cweijan.vscode-typora",
 				"ms-python.python",
-				"ms-toolsai.tensorboard"
+				"ms-toolsai.tensorboard",
+				"nbdev.nbdev-vscode"
 			]
 		}
 	},

@@ -2,3 +2,6 @@ checkpoints
 logs
 __pycache__
 data
+configs/*
+src/*
+!src/lightning_config.py
