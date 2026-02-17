@@ -150,6 +150,69 @@ def instantiate_components(config):
     return model, datamodule, trainer
 
 
+def run_training_notebook(model_class_path, datamodule_class_path, config_path=None, args=None):
+    """Run training directly in notebook mode with explicit class paths.
+    
+    Args:
+        model_class_path: Full class path for model (e.g., 'src.modules.mnist_litmodule.MNISTLitModule')
+        datamodule_class_path: Full class path for datamodule (e.g., 'src.datamodules.mnist_datamodule.MNISTDataModule')
+        config_path: Path to train.yaml config. Defaults to configs/train.yaml or ../configs/train.yaml
+        args: Optional dict of training config overrides
+    """
+    from pathlib import Path
+    
+    # Find config path
+    if config_path is None:
+        config_path = Path("configs/train.yaml")
+        if not config_path.exists():
+            config_path = Path("..") / "configs/train.yaml"
+    else:
+        config_path = Path(config_path)
+    
+    # Load configs
+    config = OmegaConf.load(config_path)
+    config_dir = config_path.parent
+    
+    if isinstance(config.get('model'), str):
+        config.model = OmegaConf.load(config_dir / config.model)
+    if isinstance(config.get('data'), str):
+        config.data = OmegaConf.load(config_dir / config.data)
+    if isinstance(config.get('trainer'), str):
+        config.trainer = OmegaConf.load(config_dir / config.trainer)
+    
+    # Merge overrides
+    if args:
+        config = OmegaConf.merge(config, OmegaConf.create(args))
+    
+    # Resolve (skip on missing env vars)
+    try:
+        OmegaConf.resolve(config)
+    except:
+        pass
+    
+    # Convert to containers for instantiation
+    model_args = OmegaConf.to_container(config.model)
+    data_args = OmegaConf.to_container(config.data)
+    trainer_args = OmegaConf.to_container(config.trainer)
+    
+    # Instantiate components
+    model = instantiate_class_path({
+        'class_path': model_class_path,
+        'init_args': model_args
+    })
+    datamodule = instantiate_class_path({
+        'class_path': datamodule_class_path,
+        'init_args': data_args
+    })
+    
+    # Instantiate nested components in trainer args
+    trainer_args = instantiate_class_path(trainer_args)
+    trainer = Trainer(**trainer_args)
+    
+    # Train
+    trainer.fit(model, datamodule=datamodule)
+
+
 def run_training(args=None):
     """Run training in either CLI or notebook mode.
     
