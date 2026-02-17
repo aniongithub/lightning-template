@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lightning-template"
+version = "0.1.0"
+description = "Notebook-first PyTorch Lightning ML template"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy==1.23.5",
+    "opencv-python",
+    "matplotlib==3.3.1",
+    "matplotlib-inline<0.1.7",
+    "lightning",
+    "pytorch-lightning[extra]",
+    "nbdev",
+    "fsspec",
+    "ipykernel",
+]
+
+[tool.nbdev]
+lib_path = "src"
