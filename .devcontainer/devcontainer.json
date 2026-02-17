@@ -11,6 +11,7 @@
 			"settings": {
 				"python.defaultInterpreterPath": "/usr/local/bin/python",
 				"python.interpreterPath": "/usr/local/bin/python",
+				"tensorBoard.logDirectory": "${workspaceFolder}/nbs/logs",
 				"terminal.integrated.defaultProfile.linux": "bash"
 			},
 			"extensions": [

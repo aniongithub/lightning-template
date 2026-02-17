@@ -19,11 +19,11 @@ RUN apt update && \
         python3-opencv && \
     rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip and wheel to ensure smooth installation
-RUN pip install --upgrade pip wheel setuptools
+# Pin setuptools<82 (tensorboard needs pkg_resources), pip<24, wheel<0.45
+RUN pip install --upgrade "pip<24" "wheel<0.45" "setuptools<82" tensorboard
 
 # Install pytorch CPU
-RUN pip3 install torch torchvision torchaudio \
+RUN pip install torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/cpu
 
 # Install any system package dependencies

@@ -10,14 +10,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "numpy==1.23.5",
-    "tensorboard>=2.4.1",
-    "torch-tb-profiler>=0.2.0",
     "opencv-python",
     "matplotlib==3.3.1",
     "matplotlib-inline<0.1.7",
     "lightning",
     "pytorch-lightning[extra]",
-    "torch-tb-profiler",
     "nbdev",
     "fsspec",
     "ipykernel",
