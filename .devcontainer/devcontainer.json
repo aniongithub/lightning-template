@@ -9,6 +9,8 @@
 	"customizations": {
 		"vscode": {
 			"settings": {
+				"python.defaultInterpreterPath": "/usr/local/bin/python",
+				"python.interpreterPath": "/usr/local/bin/python",
 				"terminal.integrated.defaultProfile.linux": "bash"
 			},
 			"extensions": [
@@ -21,6 +23,7 @@
 	},
 	"remoteUser": "vscode",
 	"containerEnv": {
+		"PATH": "/home/vscode/.local/bin:${env:PATH}",
 		"PYTHONPATH": "${containerWorkspaceFolder}:${env:PYTHONPATH}"
 	},
 	"features": {

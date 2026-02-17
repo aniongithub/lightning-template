@@ -1,7 +1,26 @@
-FROM python:3.11
+FROM python:3.11-slim
 
 ENV ACCELERATOR=cpu
 ARG DEBIAN_FRONTEND=noninteractive
+
+# Force the system 'python3' command to point to the image's Python 3.11
+RUN ln -sf /usr/local/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/local/bin/python3.11 /usr/bin/python
+
+# Install system dependencies including compilation tools
+RUN apt update && \
+    apt install -y \
+        build-essential \
+        git \
+        git-lfs \
+        pkg-config \
+        libfreetype6-dev \
+        libpng-dev \
+        python3-opencv && \
+    rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip and wheel to ensure smooth installation
+RUN pip install --upgrade pip wheel setuptools
 
 # Install pytorch CPU
 RUN pip3 install torch torchvision torchaudio \
