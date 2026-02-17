@@ -1,6 +1,7 @@
 """Utilities for auto-generating LightningCLI-compatible configurations from class signatures."""
 
 import inspect
+import importlib
 from typing import get_type_hints, Any, Dict
 from pathlib import Path
 import yaml
@@ -172,5 +173,53 @@ def training_config(**composition):
         
         wrapper._training_config = composition
         return wrapper
+    
+    return decorator
+
+def model(component_class_path: str):
+    """Decorator for classes with required parameters satisfied by another component.
+    
+    Inspects the component class to extract its defaults and automatically constructs
+    the full init_args structure. This enables cleaner code like:
+        @model("src.models.simpledense.SimpleDenseNet")
+        class MyLitModule(LightningModule):
+            def __init__(self, net: nn.Module, lr: float = 0.001):
+                ...
+    
+    Args:
+        component_class_path: Full module path to the component class (e.g., 
+                            "src.models.simpledense.SimpleDenseNet")
+    
+    Returns:
+        A decorator that applies lightning_config with auto-generated init_args
+    """
+    def decorator(cls):
+        # Dynamically import the component class
+        module_path, class_name = component_class_path.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        component_cls = getattr(module, class_name)
+        
+        # Inspect component's __init__ to extract parameter defaults
+        sig = inspect.signature(component_cls.__init__)
+        component_init_args = {}
+        
+        for param_name, param in sig.parameters.items():
+            if param_name == "self":
+                continue
+            
+            # Get default value if it exists
+            if param.default != inspect.Parameter.empty:
+                component_init_args[param_name] = param.default
+        
+        # Construct the init_args dict with component info
+        init_args = {
+            "net": {
+                "class_path": component_class_path,
+                "init_args": component_init_args
+            }
+        }
+        
+        # Apply lightning_config with the constructed init_args
+        return lightning_config(cls, init_args=init_args)
     
     return decorator

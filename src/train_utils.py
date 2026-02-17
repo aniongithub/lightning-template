@@ -20,15 +20,26 @@ def is_notebook():
         return False      # Standard Python interpreter
 
 
+def _import_class(class_path):
+    """Dynamically import a class from a class_path string.
+    
+    Args:
+        class_path: Full class path (e.g., 'src.modules.mnist_litmodule.MNISTLitModule')
+    
+    Returns:
+        The imported class
+    """
+    module_name, class_name = class_path.rsplit('.', 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, class_name)
+
+
 def instantiate_class_path(config):
     """Recursively instantiate classes from class_path + init_args."""
     if isinstance(config, dict):
         if 'class_path' in config:
             # This is a class to instantiate
-            class_path = config['class_path']
-            module_name, class_name = class_path.rsplit('.', 1)
-            module = importlib.import_module(module_name)
-            cls = getattr(module, class_name)
+            cls = _import_class(config['class_path'])
             init_args = config.get('init_args', {})
             # Recursively instantiate nested components
             init_args = {k: instantiate_class_path(v) for k, v in init_args.items()}
@@ -46,11 +57,13 @@ def load_and_prepare_config(args):
     """Load YAML configs and merge with overrides.
     
     Args:
-        args: Optional dict of overrides
+        args: Optional dict of overrides. If None, parses from sys.argv
     
     Returns:
         OmegaConf config with all referenced files loaded
     """
+    import sys
+    
     # Find workspace root
     config_path = Path("configs/train.yaml")
     if not config_path.exists():
@@ -67,11 +80,44 @@ def load_and_prepare_config(args):
     if isinstance(config.trainer, str):
         config.trainer = OmegaConf.load(config_dir / config.trainer)
     
+    # Parse CLI overrides from sys.argv if args is None
+    if args is None and not is_notebook():
+        cli_overrides = {}
+        i = 1  # Skip program name
+        while i < len(sys.argv):
+            arg = sys.argv[i]
+            if arg.startswith('--'):
+                key = arg[2:]
+                if '=' in key:
+                    k, v = key.split('=', 1)
+                    _nested_set(cli_overrides, k, v)
+                else:
+                    # Try next argument as value
+                    if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith('--'):
+                        v = sys.argv[i + 1]
+                        _nested_set(cli_overrides, key, v)
+                        i += 1
+            i += 1
+        
+        if cli_overrides:
+            args = cli_overrides
+    
     # Merge with overrides
     if args:
         config = OmegaConf.merge(config, args)
     
     return config
+
+
+def _nested_set(d, key, value):
+    """Set nested dict value using dot notation. E.g., 'trainer.max_epochs' = 10."""
+    keys = key.split('.')
+    current = d
+    for k in keys[:-1]:
+        if k not in current:
+            current[k] = {}
+        current = current[k]
+    current[keys[-1]] = value
 
 
 def instantiate_components(config):
@@ -83,23 +129,23 @@ def instantiate_components(config):
     Returns:
         Tuple of (model, datamodule, trainer)
     """
-    from src.datamodules.mnist_datamodule import MNISTDataModule
-    from src.modules.mnist_litmodule import MNISTLitModule
+    # Try to resolve all OmegaConf interpolations
+    # Skip if env vars are missing (in notebook mode without ACCELERATOR set)
+    try:
+        OmegaConf.resolve(config)
+    except Exception:
+        # Fall back to partial resolution - convert to container which handles missing env vars
+        pass
     
-    # Extract and instantiate components
-    # Handle both wrapped (with init_args) and bare configs
-    model_args = config.model.init_args if 'init_args' in config.model else config.model
-    data_args = config.data.init_args if 'init_args' in config.data else config.data
-    trainer_args = config.trainer.init_args if 'init_args' in config.trainer else config.trainer
+    # Convert to plain dicts (with resolved values where possible)
+    model_config = OmegaConf.to_container(config.model)
+    data_config = OmegaConf.to_container(config.data)
+    trainer_config = OmegaConf.to_container(config.trainer)
     
-    # Instantiate nested components (e.g., net inside model_args)
-    model_args = instantiate_class_path(OmegaConf.to_container(model_args))
-    data_args = instantiate_class_path(OmegaConf.to_container(data_args))
-    trainer_args = instantiate_class_path(OmegaConf.to_container(trainer_args))
-    
-    model = MNISTLitModule(**model_args)
-    datamodule = MNISTDataModule(**data_args)
-    trainer = Trainer(**trainer_args)
+    # Instantiate classes from their class_path + init_args
+    model = instantiate_class_path(model_config)
+    datamodule = instantiate_class_path(data_config)
+    trainer = instantiate_class_path(trainer_config)
     
     return model, datamodule, trainer
 
@@ -112,12 +158,26 @@ def run_training(args=None):
               If None, uses CLI mode with sys.argv parsing via LightningCLI.
     """
     if args is None and not is_notebook():
-        # CLI mode: LightningCLI parses sys.argv and config file
+        # CLI mode: Load classpaths config to get model and datamodule classes, then use LightningCLI
         from pytorch_lightning.cli import LightningCLI
-        from src.datamodules.mnist_datamodule import MNISTDataModule
-        from src.modules.mnist_litmodule import MNISTLitModule
         
-        cli = LightningCLI(MNISTLitModule, MNISTDataModule, seed_everything=42)
+        # Load the classpaths config generated by build.py
+        classpaths_path = Path("configs/train_classpaths.yaml")
+        if not classpaths_path.exists():
+            classpaths_path = Path("..") / "configs/train_classpaths.yaml"
+        
+        classpaths = OmegaConf.load(classpaths_path)
+        
+        # Get class paths for model and data from the mapping
+        model_class = _import_class(classpaths.mnist_litmodule)
+        data_class = _import_class(classpaths.mnist_datamodule)
+        
+        # Use LightningCLI with parser_mode="omegaconf" to handle config resolution
+        cli = LightningCLI(
+            model_class,
+            data_class,
+            parser_kwargs={"parser_mode": "omegaconf"}
+        )
     else:
         # Notebook mode: load configs, merge overrides, instantiate and train
         config = load_and_prepare_config(args)

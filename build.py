@@ -93,6 +93,47 @@ def generate_training_config(config_dir="configs"):
         traceback.print_exc()
     return None
 
+def generate_classpaths_config(src_dir="src", config_dir="configs"):
+    """Generate train_classpaths.yaml mapping config files to their class paths.
+    
+    Maps from config file names (e.g., "mnist_litmodule") to full class paths
+    for use by LightningCLI.
+    """
+    src_path = Path(src_dir)
+    config_path = Path(config_dir)
+    
+    classpaths = {}
+    
+    # Find all classes decorated with @lightning_config (not @training_config functions)
+    for py_file in src_path.rglob("*.py"):
+        if py_file.name.startswith("_"):
+            continue
+            
+        relative = py_file.relative_to(src_path.parent)
+        module_name = str(relative.with_suffix("")).replace("/", ".").replace("\\", ".")
+        
+        try:
+            module = import_module(module_name)
+            for name in dir(module):
+                obj = getattr(module, name)
+                # Only process classes (lightning_config), skip functions (training_config)
+                if hasattr(obj, "_lightning_config") and isinstance(obj, type):
+                    # Check if this class is defined in this module (not imported)
+                    if hasattr(obj, "__module__") and obj.__module__ == module_name:
+                        # Use the notebook stem as config file key
+                        config_key = py_file.stem
+                        full_class_path = f"{module_name}.{name}"
+                        classpaths[config_key] = full_class_path
+        except Exception as e:
+            pass
+    
+    # Write classpaths mapping
+    classpaths_yaml_path = config_path / "train_classpaths.yaml"
+    with open(classpaths_yaml_path, 'w') as f:
+        yaml.dump(classpaths, f, default_flow_style=False, sort_keys=False)
+    
+    return str(classpaths_yaml_path)
+
 if __name__ == "__main__":
     export_notebooks()
     generated = discover_and_generate_configs()
@@ -101,6 +142,11 @@ if __name__ == "__main__":
     train_config = generate_training_config()
     if train_config:
         generated.append(train_config)
+    
+    # Generate train_classpaths.yaml mapping for LightningCLI
+    classpaths_config = generate_classpaths_config()
+    if classpaths_config:
+        generated.append(classpaths_config)
     
     if generated:
         print(f"✓ Generated {len(generated)} config files:")
