@@ -32,7 +32,7 @@ def lightning_config(cls=None, *, init_args: Dict[str, Any] = None):
     Example:
         @lightning_config
         class SimpleModel(LightningModule):
-            def __init__(self, net: torch.nn.Module, lr: float = 0.001):
+            def __init__(self, net: torch.nn.Modu   le, lr: float = 0.001):
                 ...
         
         @lightning_config(init_args={
@@ -159,23 +159,9 @@ def training_config(**composition):
         func._training_config = composition
         
         # Wrap the function to handle LightningCLI instantiation
-        def wrapper():
-            from pytorch_lightning.cli import LightningCLI
-            
-            # Import model and datamodule classes
-            from .datamodules.mnist_datamodule import MNISTDataModule
-            from .modules.mnist_litmodule import MNISTLitModule
-            
-            # LightningCLI with run=True automatically parses args and runs fit/test/predict
-            # The user's decorated function is called with cli if run=False, but here we let
-            # LightningCLI handle the execution directly
-            cli = LightningCLI(
-                model_class=MNISTLitModule,
-                datamodule_class=MNISTDataModule,
-                seed_everything_default=composition.get('seed_everything', 42),
-                run=True,
-                parser_kwargs={"parser_mode": "omegaconf", "error_handler": None}
-            )
+        def wrapper(args=None):
+            # Call the original function with args parameter
+            return func(args=args)
         
         wrapper._training_config = composition
         return wrapper

@@ -2,23 +2,33 @@
 	"name": "${localWorkspaceFolderBasename}",
 	"build": {
 		"context": "..",
-		
 		// Use the appropriate Dockerfile for your environment
 		"dockerfile": "cpu.Dockerfile" // <-- For CPU
 		// "dockerfile": "gpu.Dockerfile" // <-- For GPU
 	},
 	"customizations": {
 		"vscode": {
+			"settings": {
+				"terminal.integrated.defaultProfile.linux": "bash"
+			},
 			"extensions": [
-				"cweijan.vscode-typora",
-				"ms-python.python",
-				"ms-toolsai.tensorboard",
-				"nbdev.nbdev-vscode"
+			"ms-python.python",
+			"ms-toolsai.tensorboard",
+			"nbdev.nbdev-vscode",
+			"ms-toolsai.jupyter"
 			]
 		}
 	},
-	"updateContentCommand": "pip3 install -r ${containerWorkspaceFolder}/requirements.txt",
-	
+	"remoteUser": "vscode",
+	"containerEnv": {
+		"PYTHONPATH": "${containerWorkspaceFolder}:${env:PYTHONPATH}"
+	},
+	"features": {
+		"ghcr.io/nils-geistmann/devcontainers-features/create-remote-user:0": {
+			"passwordLessSudo": true
+		}
+	},
+	"postCreateCommand": "pip3 install -e .",
 	// Uncomment runArgs when using GPU
 	// "runArgs": [
 	// 	"--privileged",
