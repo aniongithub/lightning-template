@@ -143,17 +143,24 @@ def training_config(**composition):
     
     Args:
         **composition: Keys are config file paths (seed_everything, trainer, model, data)
+                      trainer and seed_everything have defaults; model and data must be specified.
         
     Example:
         @training_config(
-            seed_everything=42,
-            trainer="trainer/default.yaml",
-            model="model/mnist.yaml",
-            data="datamodule/mnist.yaml"
+            model="mnist_litmodule.yaml",
+            data="mnist_datamodule.yaml"
         )
-        def main(cli):
-            cli.trainer.fit(cli.model, datamodule=cli.datamodule)
+        def main(args=None):
+            from src.train_utils import run_training
+            return run_training(args)
     """
+    # Set defaults only for trainer and seed_everything
+    defaults = {
+        'seed_everything': 42,
+        'trainer': 'trainer/default.yaml',
+    }
+    composition = {**defaults, **composition}
+    
     def decorator(func):
         # Store composition for build.py to find and generate train.yaml
         func._training_config = composition
