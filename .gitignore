@@ -10,5 +10,6 @@ src/*
 !src/__init__.py
 !src/lightning_config.py
 !src/train_utils.py
+!src/run_utils.py
 
 lightning_logs/
