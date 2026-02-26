@@ -143,18 +143,30 @@ def training_config(**composition):
     """Decorator for training orchestration that generates train.yaml and wraps main().
     
     Args:
-        **composition: Keys are config file paths (seed_everything, trainer, model, data)
-                      trainer and seed_everything have defaults; model and data must be specified.
+        **composition: Registry keys for components (seed_everything, trainer, model_notebook, data_notebook)
+                      trainer and seed_everything have defaults; model_notebook and data_notebook must be specified.
         
     Example:
         @training_config(
-            model="mnist_litmodule.yaml",
-            data="mnist_datamodule.yaml"
+            model_notebook="mnist_litmodule",
+            data_notebook="mnist_datamodule"
         )
         def main(args=None):
             from src.train_utils import run_training
             return run_training(args)
     """
+    # Map new parameter names to generated config keys
+    if 'model_notebook' in composition:
+        composition['model'] = composition.pop('model_notebook')
+    if 'data_notebook' in composition:
+        composition['data'] = composition.pop('data_notebook')
+    
+    # Add .yaml extension to model and data keys for LightningCLI compatibility
+    if 'model' in composition and isinstance(composition['model'], str) and not composition['model'].endswith('.yaml'):
+        composition['model'] = f"{composition['model']}.yaml"
+    if 'data' in composition and isinstance(composition['data'], str) and not composition['data'].endswith('.yaml'):
+        composition['data'] = f"{composition['data']}.yaml"
+    
     # Set defaults only for trainer and seed_everything
     defaults = {
         'seed_everything': 42,

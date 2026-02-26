@@ -68,30 +68,49 @@ def discover_and_generate_configs(src_dir="src", config_dir="configs"):
     
     return generated
 
-def generate_training_config(config_dir="configs"):
-    """Discover @training_config decorated functions and generate train.yaml.
+def generate_training_configs(src_dir="src", config_dir="configs"):
+    """Discover all @training_config decorated functions and generate YAML for each.
     
-    Generates train.yaml with file references to component configs.
-    LightningCLI will compose them at runtime.
+    Scans src/ for functions with _training_config attribute and generates
+    a config file for each, named after the module (notebook).
+    
+    E.g., src/train_basic.py → configs/train_basic.yaml
+         src/train_advanced.py → configs/train_advanced.yaml
     """
-    try:
-        from src.train import main
+    src_path = Path(src_dir)
+    config_path = Path(config_dir)
+    config_path.mkdir(exist_ok=True)
+    
+    generated = []
+    
+    for py_file in src_path.rglob("*.py"):
+        if py_file.name.startswith("_"):
+            continue
+            
+        relative = py_file.relative_to(src_path.parent)
+        module_name = str(relative.with_suffix("")).replace("/", ".").replace("\\", ".")
         
-        if hasattr(main, '_training_config'):
-            composition = main._training_config.copy()
-            config_path = Path(config_dir)
-            train_yaml_path = config_path / "train.yaml"
-            
-            # Write composition with file references as-is (no deep merging)
-            with open(train_yaml_path, 'w') as f:
-                yaml.dump(composition, f, default_flow_style=False, sort_keys=False)
-            
-            return str(train_yaml_path)
-    except Exception as e:
-        print(f"✗ Failed to generate train.yaml: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-    return None
+        try:
+            module = import_module(module_name)
+            for name in dir(module):
+                obj = getattr(module, name)
+                # Look for functions decorated with @training_config
+                if callable(obj) and hasattr(obj, "_training_config"):
+                    composition = obj._training_config.copy()
+                    
+                    # Use module stem (notebook name) as config file name
+                    config_file = config_path / f"{py_file.stem}.yaml"
+                    
+                    # Write composition with file references as-is (no deep merging)
+                    with open(config_file, 'w') as f:
+                        yaml.dump(composition, f, default_flow_style=False, sort_keys=False)
+                    
+                    generated.append(str(config_file))
+                    break  # One config per module
+        except Exception as e:
+            pass
+    
+    return generated
 
 def generate_classpaths_config(src_dir="src", config_dir="configs"):
     """Generate train_classpaths.yaml mapping config files to their class paths.
@@ -138,10 +157,9 @@ if __name__ == "__main__":
     export_notebooks()
     generated = discover_and_generate_configs()
     
-    # Generate train.yaml from @training_config decorator
-    train_config = generate_training_config()
-    if train_config:
-        generated.append(train_config)
+    # Generate train*.yaml from all @training_config decorators
+    train_configs = generate_training_configs()
+    generated.extend(train_configs)
     
     # Generate train_classpaths.yaml mapping for LightningCLI
     classpaths_config = generate_classpaths_config()

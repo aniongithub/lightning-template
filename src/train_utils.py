@@ -150,35 +150,53 @@ def instantiate_components(config):
     return model, datamodule, trainer
 
 
-def run_training_notebook(model_class_path, datamodule_class_path, config_path=None, args=None):
-    """Run training directly in notebook mode with explicit class paths.
+def run_training_notebook(notebook_name, args=None):
+    """Run training directly in notebook mode using registry-based config lookup.
     
     Args:
-        model_class_path: Full class path for model (e.g., 'src.modules.mnist_litmodule.MNISTLitModule')
-        datamodule_class_path: Full class path for datamodule (e.g., 'src.datamodules.mnist_datamodule.MNISTDataModule')
-        config_path: Path to train.yaml config. Defaults to configs/train.yaml or ../configs/train.yaml
-        args: Optional dict of training config overrides
+        notebook_name: Name of the training notebook (e.g., 'train_classifier')
+                      Looks up configs/{notebook_name}.yaml and resolves model/data via train_classpaths.yaml
+        args: Optional dict of training config overrides (e.g., {"trainer": {"max_epochs": 1}})
     """
     from pathlib import Path
     
-    # Find config path
-    if config_path is None:
-        config_path = Path("configs/train.yaml")
-        if not config_path.exists():
-            config_path = Path("..") / "configs/train.yaml"
-    else:
-        config_path = Path(config_path)
+    # Find training config path
+    config_path = Path(f"configs/{notebook_name}.yaml")
+    if not config_path.exists():
+        config_path = Path("..") / f"configs/{notebook_name}.yaml"
     
-    # Load configs
+    if not config_path.exists():
+        raise FileNotFoundError(f"Training config not found: {notebook_name}.yaml")
+    
+    # Load training config
     config = OmegaConf.load(config_path)
     config_dir = config_path.parent
     
-    if isinstance(config.get('model'), str):
-        config.model = OmegaConf.load(config_dir / config.model)
-    if isinstance(config.get('data'), str):
-        config.data = OmegaConf.load(config_dir / config.data)
+    # Load trainer config (referenced in training config)
     if isinstance(config.get('trainer'), str):
         config.trainer = OmegaConf.load(config_dir / config.trainer)
+    
+    # Load classpaths registry
+    classpaths_path = config_dir / "train_classpaths.yaml"
+    if not classpaths_path.exists():
+        classpaths_path = Path("..") / "configs/train_classpaths.yaml"
+    
+    classpaths = OmegaConf.load(classpaths_path)
+    
+    # Strip .yaml extension to get registry keys
+    # Config now has "mnist_litmodule.yaml" but registry has "mnist_litmodule"
+    model_registry_key = config.model.replace('.yaml', '') if isinstance(config.model, str) else config.model
+    data_registry_key = config.data.replace('.yaml', '') if isinstance(config.data, str) else config.data
+    
+    model_class_path = getattr(classpaths, model_registry_key)
+    data_class_path = getattr(classpaths, data_registry_key)
+    
+    # Load component configs (using keys without .yaml)
+    model_config_path = config_dir / f"{model_registry_key}.yaml"
+    data_config_path = config_dir / f"{data_registry_key}.yaml"
+    
+    config.model = OmegaConf.load(model_config_path)
+    config.data = OmegaConf.load(data_config_path)
     
     # Merge overrides
     if args:
@@ -201,7 +219,7 @@ def run_training_notebook(model_class_path, datamodule_class_path, config_path=N
         'init_args': model_args
     })
     datamodule = instantiate_class_path({
-        'class_path': datamodule_class_path,
+        'class_path': data_class_path,
         'init_args': data_args
     })
     
@@ -221,30 +239,31 @@ def run_training(args=None):
               If None, uses CLI mode with sys.argv parsing via LightningCLI.
     """
     if args is None and not is_notebook():
-        # CLI mode: Load classpaths config to get model and datamodule classes, then use LightningCLI
+        # CLI mode: Use LightningCLI directly
         from pytorch_lightning.cli import LightningCLI
         
-        # Load train.yaml to find which model and datamodule configs to use
+        # Load train.yaml to extract model/data registry keys (with .yaml extension)
         train_config_path = Path("configs/train.yaml")
         if not train_config_path.exists():
             train_config_path = Path("..") / "configs/train.yaml"
         
         train_config = OmegaConf.load(train_config_path)
+        config_dir = train_config_path.parent
         
-        # Extract module names from config filenames (e.g., "icu_litmodule.yaml" -> "icu_litmodule")
-        model_module = train_config.model.replace('.yaml', '') if isinstance(train_config.model, str) else 'icu_litmodule'
-        data_module = train_config.data.replace('.yaml', '') if isinstance(train_config.data, str) else 'icu_continuous_datamodule'
+        # Strip .yaml to get registry keys
+        model_key = train_config.model.replace('.yaml', '') if isinstance(train_config.model, str) else None
+        data_key = train_config.data.replace('.yaml', '') if isinstance(train_config.data, str) else None
         
-        # Load the classpaths config generated by build.py
-        classpaths_path = Path("configs/train_classpaths.yaml")
+        # Load classpaths registry
+        classpaths_path = config_dir / "train_classpaths.yaml"
         if not classpaths_path.exists():
             classpaths_path = Path("..") / "configs/train_classpaths.yaml"
         
         classpaths = OmegaConf.load(classpaths_path)
         
-        # Get class paths for model and data from the mapping
-        model_class = _import_class(getattr(classpaths, model_module))
-        data_class = _import_class(getattr(classpaths, data_module))
+        # Get actual class paths from registry
+        model_class = _import_class(getattr(classpaths, model_key))
+        data_class = _import_class(getattr(classpaths, data_key))
         
         # Use LightningCLI with parser_mode="omegaconf" to handle config resolution
         cli = LightningCLI(
